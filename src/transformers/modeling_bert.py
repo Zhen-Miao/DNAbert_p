@@ -25,6 +25,18 @@ from torch import nn
 from torch.nn import CrossEntropyLoss, MSELoss
 import torch.autograd as autograd
 
+
+####################################################
+########################## performer ###############
+####################################################
+
+from performer_pytorch import FastAttention  
+
+####################################################
+################## end of performer ################
+####################################################
+
+
 from .activations import gelu, gelu_new, swish
 from .configuration_bert import BertConfig
 from .file_utils import add_start_docstrings, add_start_docstrings_to_callable
@@ -231,31 +243,70 @@ class BertSelfAttention(nn.Module):
         key_layer = self.transpose_for_scores(mixed_key_layer)
         value_layer = self.transpose_for_scores(mixed_value_layer)
 
-        # Take the dot product between "query" and "key" to get the raw attention scores.
-        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
-        if attention_mask is not None:
-            # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
-            attention_scores = attention_scores + attention_mask
+        ####################################################
+        ########################## performer ###############
+        ####################################################
 
-        # Normalize the attention scores to probabilities.
-        attention_probs = nn.Softmax(dim=-1)(attention_scores)
+        fn_attn = FastAttention(
+                  dim_heads = self.attention_head_size, 
+                  causal = False, 
+                  generalized_attention = False,
+                  no_projection = True)
 
-        # This is actually dropping out entire tokens to attend to, which might
-        # seem a bit unusual, but is taken from the original Transformer paper.
-        attention_probs = self.dropout(attention_probs)
+        #### 0.
+        # use default nb_features, which is (d * log(d)),
+        # where d is the dimension of each head    
 
-        # Mask heads if we want to
-        if head_mask is not None:
-            attention_probs = attention_probs * head_mask
+        #### 1. 
+        # causal = False 
+        # this case there is no "direction" in the model so it is not causal
+        # so the attention function will call *linear_attention*
+        # 
 
-        context_layer = torch.matmul(attention_probs, value_layer)
+        ### 2.
+        # if no projection is turned on, no projection will be used
+        # queries and keys will be softmax-ed as in the original efficient attention paper
 
-        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
-        new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
-        context_layer = context_layer.view(*new_context_layer_shape)
+        fn_attn_context = fn_attn(query_layer,key_layer, value_layer)
 
-        outputs = (context_layer, attention_probs) if self.output_attentions else (context_layer,)
+        ####################################################
+        ################## end of performer ################
+        ####################################################
+
+        # # Take the dot product between "query" and "key" to get the raw attention scores.
+        # attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+        # attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+        # if attention_mask is not None:
+        #     # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
+        #     attention_scores = attention_scores + attention_mask
+
+        # # Normalize the attention scores to probabilities.
+        # attention_probs = nn.Softmax(dim=-1)(attention_scores)
+
+        # # This is actually dropping out entire tokens to attend to, which might
+        # # seem a bit unusual, but is taken from the original Transformer paper.
+        # attention_probs = self.dropout(attention_probs)
+
+        # # Mask heads if we want to
+        # if head_mask is not None:
+        #     attention_probs = attention_probs * head_mask
+
+        # context_layer = torch.matmul(attention_probs, value_layer)
+
+        ####################################################
+        ########################## performer ###############
+        ####################################################
+
+        # this is wrong... value is not a 
+        # fn_attn_attention_probs_t = torch.solve(value_layer.transpose(-1,-2), fn_attn_context.transpose(-1,-2))
+
+        fn_attn_context = fn_attn_context.permute(0, 2, 1, 3).contiguous()
+        new_context_layer_shape = fn_attn_context.size()[:-2] + (self.all_head_size,)
+        fn_attn_context = fn_attn_context.view(*new_context_layer_shape)
+
+        fn_attn_attention_probs = torch.solve()
+
+        outputs = (fn_attn_context, attention_probs) if self.output_attentions else (fn_attn_context,)
         return outputs
 
 
