@@ -304,7 +304,7 @@ class BertSelfAttention(nn.Module):
         new_context_layer_shape = fn_attn_context.size()[:-2] + (self.all_head_size,)
         fn_attn_context = fn_attn_context.view(*new_context_layer_shape)
 
-        fn_attn_attention_probs = torch.solve()
+       
 
         outputs = (fn_attn_context, attention_probs) if self.output_attentions else (fn_attn_context,)
         return outputs
