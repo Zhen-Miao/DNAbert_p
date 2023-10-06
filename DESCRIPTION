@@ -1,0 +1,3 @@
+Package: DNAbert_p
+Title: DNAbert_p
+Description: A performer version of DNAbert, with the hope of model training acceleration.
